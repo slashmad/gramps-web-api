@@ -371,5 +371,87 @@ class TestRunImportGedcomFallback(unittest.TestCase):
                 os.unlink(temp_file)
 
 
+class TestRunImportEncodingFallback(unittest.TestCase):
+    """Tests for encoding fallback in plugin-based imports."""
+
+    def test_text_import_decode_error_retries_after_transcode(self):
+        """Retry text importers with UTF-8 transcoding on decode errors."""
+        import_function = MagicMock(
+            side_effect=[
+                UnicodeDecodeError(
+                    "utf-8", b"\xe4", 0, 1, "invalid continuation byte"
+                ),
+                True,
+            ]
+        )
+        plugin = MagicMock()
+        plugin.get_extension.return_value = "gw"
+        plugin.get_import_function.return_value = import_function
+        plugin_manager = MagicMock()
+        plugin_manager.get_import_plugins.return_value = [plugin]
+
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".gw", delete=False) as f:
+            temp_file = f.name
+            f.write("Älvsbyn".encode("latin-1"))
+
+        try:
+            with patch(
+                "gramps_webapi.api.resources.util.BasePluginManager.get_instance",
+                return_value=plugin_manager,
+            ):
+                run_import(
+                    db_handle=MagicMock(),
+                    file_name=temp_file,
+                    extension="gw",
+                    delete=False,
+                )
+
+            self.assertEqual(import_function.call_count, 2)
+            with open(temp_file, "rb") as f:
+                # Verify file is now UTF-8 encoded.
+                self.assertEqual(f.read(), "Älvsbyn".encode("utf-8"))
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    def test_non_text_import_decode_error_does_not_retry(self):
+        """Do not retry non-text importers on decode errors."""
+        import_function = MagicMock(
+            side_effect=UnicodeDecodeError(
+                "utf-8", b"\xe4", 0, 1, "invalid continuation byte"
+            )
+        )
+        plugin = MagicMock()
+        plugin.get_extension.return_value = "gramps"
+        plugin.get_import_function.return_value = import_function
+        plugin_manager = MagicMock()
+        plugin_manager.get_import_plugins.return_value = [plugin]
+
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".gramps", delete=False) as f:
+            temp_file = f.name
+            f.write(b"<database></database>")
+
+        try:
+            with patch(
+                "gramps_webapi.api.resources.util.BasePluginManager.get_instance",
+                return_value=plugin_manager,
+            ), patch(
+                "gramps_webapi.api.resources.util.abort_with_message",
+                side_effect=RuntimeError("abort called"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "abort called"):
+                    run_import(
+                        db_handle=MagicMock(),
+                        file_name=temp_file,
+                        extension="gramps",
+                        delete=False,
+                    )
+
+            import_function.assert_called_once()
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+
 if __name__ == "__main__":
     unittest.main()

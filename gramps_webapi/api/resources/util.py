@@ -88,6 +88,7 @@ from ..util import (
 
 pd = PlaceDisplay()
 _ = glocale.translation.gettext
+TEXT_IMPORT_EXTENSIONS_WITH_ENCODING_FALLBACK = {"csv", "def", "ged", "gw", "vcf"}
 
 
 def get_person_by_handle(db_handle: DbReadBase, handle: Handle) -> Union[Person, dict]:
@@ -1477,6 +1478,32 @@ def remove_mediapath_from_gramps_xml(file_name: FilenameOrPath) -> None:
             f.write(content_modified)
 
 
+def transcode_text_file_to_utf8(file_name: FilenameOrPath) -> None:
+    """Transcode a text file in-place to UTF-8.
+
+    Used as a compatibility fallback for legacy imports that may contain
+    ISO-8859-1/cp1252 bytes despite tools expecting UTF-8.
+    """
+    with open(file_name, "rb") as f:
+        raw_content = f.read()
+
+    decoded_content = None
+    for encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
+        try:
+            decoded_content = raw_content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if decoded_content is None:
+        raise UnicodeDecodeError(
+            "utf-8", raw_content, 0, 1, "unable to decode import file"
+        )
+
+    with open(file_name, "wb") as f:
+        f.write(decoded_content.encode("utf-8"))
+
+
 def run_import(
     db_handle: DbWriteBase,
     file_name: FilenameOrPath,
@@ -1523,7 +1550,21 @@ def run_import(
                 user = UserTaskProgress(task=task)
             else:
                 user = User()
-            result = import_function(db_handle, str(file_name), user)
+            try:
+                result = import_function(db_handle, str(file_name), user)
+            except UnicodeDecodeError as e:
+                if extension.lower() not in TEXT_IMPORT_EXTENSIONS_WITH_ENCODING_FALLBACK:
+                    abort_with_message(500, f"Import failed: {e}")
+                    return
+                try:
+                    transcode_text_file_to_utf8(file_name)
+                    result = import_function(db_handle, str(file_name), user)
+                except Exception as transcoded_exc:
+                    abort_with_message(500, f"Import failed: {transcoded_exc}")
+                    return
+            except Exception as e:
+                abort_with_message(500, f"Import failed: {e}")
+                return
             if delete:
                 os.remove(file_name)
             if not result:
