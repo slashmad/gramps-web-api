@@ -23,8 +23,9 @@ import gzip
 import os
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
-from gramps_webapi.api.resources.util import remove_mediapath_from_gramps_xml
+from gramps_webapi.api.resources.util import remove_mediapath_from_gramps_xml, run_import
 
 
 class TestRemoveMediapathFromGrampsXml(unittest.TestCase):
@@ -299,6 +300,75 @@ class TestRemoveMediapathFromGrampsXml(unittest.TestCase):
             self.assertIn(b"<surname>Doe</surname>", result)
         finally:
             os.unlink(temp_file)
+
+
+class TestRunImportGedcomFallback(unittest.TestCase):
+    """Tests for GEDCOM import fallback behavior."""
+
+    def test_gedcom7_decode_error_falls_back_to_plugin_importer(self):
+        """Fallback to plugin importer when GEDCOM7 importer hits decode errors."""
+        import_function = MagicMock(return_value=True)
+        plugin = MagicMock()
+        plugin.get_extension.return_value = "ged"
+        plugin.get_import_function.return_value = import_function
+
+        plugin_manager = MagicMock()
+        plugin_manager.get_import_plugins.return_value = [plugin]
+
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".ged", delete=False) as f:
+            temp_file = f.name
+            f.write(b"0 HEAD\n1 GEDC\n2 VERS 7.0\n0 TRLR\n")
+
+        try:
+            with patch(
+                "gramps_webapi.api.resources.util.detect_gedcom_major_version",
+                return_value=7,
+            ), patch(
+                "gramps_webapi.api.resources.util.gramps_gedcom7.import_gedcom",
+                side_effect=UnicodeDecodeError(
+                    "utf-8", b"\xe4", 0, 1, "invalid continuation byte"
+                ),
+            ), patch(
+                "gramps_webapi.api.resources.util.BasePluginManager.get_instance",
+                return_value=plugin_manager,
+            ):
+                run_import(db_handle=MagicMock(), file_name=temp_file, extension="ged")
+
+            import_function.assert_called_once()
+            self.assertFalse(os.path.exists(temp_file))
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    def test_gedcom7_non_decode_error_does_not_fallback(self):
+        """Do not fallback for non-decode GEDCOM7 importer errors."""
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".ged", delete=False) as f:
+            temp_file = f.name
+            f.write(b"0 HEAD\n1 GEDC\n2 VERS 7.0\n0 TRLR\n")
+
+        try:
+            with patch(
+                "gramps_webapi.api.resources.util.detect_gedcom_major_version",
+                return_value=7,
+            ), patch(
+                "gramps_webapi.api.resources.util.gramps_gedcom7.import_gedcom",
+                side_effect=ValueError("gedcom7 parse failed"),
+            ), patch(
+                "gramps_webapi.api.resources.util.abort_with_message",
+                side_effect=RuntimeError("abort called"),
+            ) as abort_mock, patch(
+                "gramps_webapi.api.resources.util.BasePluginManager.get_instance"
+            ) as plugin_manager_mock:
+                with self.assertRaisesRegex(RuntimeError, "abort called"):
+                    run_import(
+                        db_handle=MagicMock(), file_name=temp_file, extension="ged"
+                    )
+
+            abort_mock.assert_called_once()
+            plugin_manager_mock.assert_not_called()
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
 
 
 if __name__ == "__main__":

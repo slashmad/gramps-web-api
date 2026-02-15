@@ -1488,12 +1488,23 @@ def run_import(
     if extension.lower() == "ged" and detect_gedcom_major_version(str(file_name)) == 7:
         try:
             gramps_gedcom7.import_gedcom(input_file=file_name, db=db_handle)
-        except Exception as e:
-            abort_with_message(500, f"Import failed: {e}")
-        finally:
             if delete:
                 os.remove(file_name)
-        return
+            return
+        except UnicodeError as e:
+            # Some exports declare UTF-8 while still containing legacy bytes.
+            # Fall back to the plugin-based importer for compatibility.
+            try:
+                current_app.logger.warning(
+                    "GEDCOM7 importer decode error; falling back to plugin importer: %s",
+                    e,
+                )
+            except RuntimeError:
+                # No Flask app context available; keep silent and continue fallback.
+                pass
+        except Exception as e:
+            abort_with_message(500, f"Import failed: {e}")
+            return
     if extension.lower() == "gramps":
         # Remove mediapath tag from Gramps XML files before import
         # This is necessary because the mediapath tag can cause import failures
