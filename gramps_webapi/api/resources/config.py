@@ -21,7 +21,7 @@
 
 
 from flask import abort, current_app, jsonify
-from webargs import fields
+from webargs import fields, validate
 
 from ...auth import (
     config_delete,
@@ -33,7 +33,8 @@ from ...auth import (
 from ...auth.const import PERM_EDIT_SETTINGS, PERM_VIEW_SETTINGS
 from ...const import is_db_config_key_allowed
 from ..auth import require_permissions
-from ..util import use_args
+from ..tasks import send_email_confirm_email, send_email_reset_password
+from ..util import abort_with_message, use_args
 from . import ProtectedResource
 
 
@@ -101,3 +102,29 @@ class ConfigResource(ProtectedResource):
             abort(404)
         config_delete(key=key)
         return "", 200
+
+
+class ConfigEmailTestResource(ProtectedResource):
+    """Resource for sending SMTP test e-mails."""
+
+    @use_args(
+        {
+            "mail_to": fields.Email(required=True),
+            "username": fields.Str(required=True),
+            "template": fields.Str(
+                required=True, validate=validate.OneOf(["confirm-email", "reset-pw"])
+            ),
+        },
+        location="json",
+    )
+    def post(self, args):
+        """Send a test email with the current SMTP settings."""
+        require_permissions([PERM_EDIT_SETTINGS])
+        try:
+            if args["template"] == "confirm-email":
+                send_email_confirm_email(args["mail_to"], args["username"], "")
+            else:
+                send_email_reset_password(args["mail_to"], args["username"], "")
+        except ValueError as exc:
+            abort_with_message(500, str(exc))
+        return jsonify({"status": "sent"}), 200

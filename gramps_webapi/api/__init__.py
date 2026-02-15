@@ -36,7 +36,7 @@ from .resources.bookmarks import (
 )
 from .resources.chat import ChatResource
 from .resources.citations import CitationResource, CitationsResource
-from .resources.config import ConfigResource, ConfigsResource
+from .resources.config import ConfigEmailTestResource, ConfigResource, ConfigsResource
 from .resources.dna import DnaMatchParserResource, PersonDnaMatchesResource
 from .resources.events import EventResource, EventSpanResource, EventsResource
 from .resources.export_media import MediaArchiveFileResource, MediaArchiveResource
@@ -381,6 +381,11 @@ register_endpt(
     ConfigResource,
     "/config/<string:key>/",
     "config",
+)
+register_endpt(
+    ConfigEmailTestResource,
+    "/config/email/test/",
+    "config_email_test",
 )
 
 # Tasks

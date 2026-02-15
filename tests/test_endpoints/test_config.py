@@ -169,3 +169,59 @@ class TestConfig(unittest.TestCase):
         from_email, host = get_from_host()
         assert from_email == "from@example.com"
         assert host == "https://www.example.com"
+
+    def test_email_test_requires_permission(self):
+        rv = self.client.post(
+            f"{BASE_URL}/config/email/test/",
+            headers=self.header_member,
+            json={
+                "mail_to": "test@example.com",
+                "username": "stolpee",
+                "template": "confirm-email",
+            },
+        )
+        assert rv.status_code == 403
+
+    @patch("gramps_webapi.api.resources.config.send_email_confirm_email")
+    def test_email_test_confirm(self, mock_send):
+        rv = self.client.post(
+            f"{BASE_URL}/config/email/test/",
+            headers=self.header_owner,
+            json={
+                "mail_to": "test@example.com",
+                "username": "stolpee",
+                "template": "confirm-email",
+            },
+        )
+        assert rv.status_code == 200
+        assert rv.json["status"] == "sent"
+        mock_send.assert_called_once_with("test@example.com", "stolpee", "")
+
+    @patch("gramps_webapi.api.resources.config.send_email_reset_password")
+    def test_email_test_reset_pw(self, mock_send):
+        rv = self.client.post(
+            f"{BASE_URL}/config/email/test/",
+            headers=self.header_owner,
+            json={
+                "mail_to": "test@example.com",
+                "username": "stolpee",
+                "template": "reset-pw",
+            },
+        )
+        assert rv.status_code == 200
+        assert rv.json["status"] == "sent"
+        mock_send.assert_called_once_with("test@example.com", "stolpee", "")
+
+    @patch("gramps_webapi.api.resources.config.send_email_confirm_email")
+    def test_email_test_error(self, mock_send):
+        mock_send.side_effect = ValueError("Connection was refused.")
+        rv = self.client.post(
+            f"{BASE_URL}/config/email/test/",
+            headers=self.header_owner,
+            json={
+                "mail_to": "test@example.com",
+                "username": "stolpee",
+                "template": "confirm-email",
+            },
+        )
+        assert rv.status_code == 500
