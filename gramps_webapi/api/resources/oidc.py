@@ -59,6 +59,22 @@ def _is_development_environment(frontend_url: Optional[str]) -> bool:
     )
 
 
+def _get_login_customization() -> dict:
+    """Return login page presentation settings exposed to unauthenticated clients."""
+    return {
+        "title": current_app.config.get("LOGIN_PAGE_TITLE", ""),
+        "left_image_url": current_app.config.get("LOGIN_PAGE_LEFT_IMAGE_URL", ""),
+        "right_image_url": current_app.config.get("LOGIN_PAGE_RIGHT_IMAGE_URL", ""),
+        "image_width": current_app.config.get("LOGIN_PAGE_IMAGE_WIDTH", "280px"),
+        "image_aspect_ratio": current_app.config.get(
+            "LOGIN_PAGE_IMAGE_ASPECT_RATIO", "3 / 4"
+        ),
+        "image_object_fit": current_app.config.get(
+            "LOGIN_PAGE_IMAGE_OBJECT_FIT", "cover"
+        ),
+    }
+
+
 class OIDCLoginResource(Resource):
     """Resource for initiating OIDC login flow.
 
@@ -354,12 +370,13 @@ class OIDCConfigResource(Resource):
 
     def get(self):
         """Get OIDC configuration for frontend."""
+        login_customization = _get_login_customization()
         if not is_oidc_enabled():
-            return {"enabled": False}
+            return {"enabled": False, "login_customization": login_customization}
 
         available_providers = get_available_oidc_providers()
         if not available_providers:
-            return {"enabled": False}
+            return {"enabled": False, "login_customization": login_customization}
 
         # Build provider list with display information
         base_url = get_config("BASE_URL")
@@ -382,6 +399,7 @@ class OIDCConfigResource(Resource):
                 "OIDC_DISABLE_LOCAL_AUTH", False
             ),
             "auto_redirect": current_app.config.get("OIDC_AUTO_REDIRECT", True),
+            "login_customization": login_customization,
         }
 
 

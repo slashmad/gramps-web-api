@@ -39,6 +39,7 @@ class TestOIDCEndpoints(unittest.TestCase):
         self.assertEqual(rv.status_code, 200)
         data = rv.get_json()
         self.assertFalse(data.get("enabled", True))
+        self.assertIn("login_customization", data)
 
     @patch.dict("os.environ", {"GRAMPSWEB_OIDC_ENABLED": "true"})
     @patch("gramps_webapi.api.resources.oidc.is_oidc_enabled", return_value=True)
@@ -57,6 +58,7 @@ class TestOIDCEndpoints(unittest.TestCase):
         data = rv.get_json()
         self.assertTrue(data.get("enabled"))
         self.assertIn("providers", data)
+        self.assertIn("login_customization", data)
         self.assertEqual(len(data["providers"]), 1)
         self.assertEqual(data["providers"][0]["id"], "custom")
         self.assertEqual(data["providers"][0]["name"], "Custom Provider")
@@ -87,6 +89,7 @@ class TestOIDCEndpoints(unittest.TestCase):
         self.assertTrue(data.get("enabled"))
         self.assertTrue(data.get("disable_local_auth"))
         self.assertFalse(data.get("auto_redirect"))
+        self.assertIn("login_customization", data)
 
     def test_oidc_login_disabled(self):
         """Test OIDC login endpoint when OIDC is disabled."""

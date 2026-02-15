@@ -41,6 +41,12 @@ class DefaultConfig(object):
     BASE_URL = "http://localhost/"
     CORS_EXPOSE_HEADERS = ["X-Total-Count"]
     STATIC_PATH = "static"
+    LOGIN_PAGE_TITLE = ""
+    LOGIN_PAGE_LEFT_IMAGE_URL = ""
+    LOGIN_PAGE_RIGHT_IMAGE_URL = ""
+    LOGIN_PAGE_IMAGE_WIDTH = "280px"
+    LOGIN_PAGE_IMAGE_ASPECT_RATIO = "3 / 4"
+    LOGIN_PAGE_IMAGE_OBJECT_FIT = "cover"
     REQUEST_CACHE_CONFIG = {
         "CACHE_TYPE": "FileSystemCache",
         "CACHE_DIR": str(Path.cwd() / "request_cache"),
