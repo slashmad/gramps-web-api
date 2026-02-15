@@ -38,7 +38,7 @@ from .api.tasks import send_email_confirm_email, send_email_reset_password
 from .types import ProgressCallback
 from .api.util import close_db, get_db_manager, list_trees
 from .app import create_app
-from .auth import add_user, delete_user, fill_tree, user_db
+from .auth import add_user, delete_user, fill_tree, modify_user, user_db
 from .const import ENV_CONFIG_FILE, TREE_MULTI
 from .dbmanager import WebDbManager
 from .translogger import TransLogger
@@ -208,6 +208,18 @@ def user_del(ctx, name):
     app.logger.info(f"Deleting user {name} ...")
     with app.app_context():
         delete_user(name)
+
+
+@user.command("set-password")
+@click.argument("name")
+@click.argument("password", required=True)
+@click.pass_context
+def user_set_password(ctx, name, password):
+    """Set or replace a user's password."""
+    app = ctx.obj["app"]
+    app.logger.info(f"Setting password for user {name} ...")
+    with app.app_context():
+        modify_user(name=name, password=password)
 
 
 @user.command("fill-tree")

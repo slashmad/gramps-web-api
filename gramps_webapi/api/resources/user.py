@@ -484,17 +484,24 @@ class UserChangePasswordResource(UserChangeBase):
 
     @use_args(
         {
-            "old_password": fields.Str(required=True),
+            "old_password": fields.Str(required=False),
             "new_password": fields.Str(required=True),
         },
         location="json",
     )
     def post(self, args, user_name: str):
         """Post new password."""
+        own_user = user_name == "-"
         user_name, _ = self.prepare_edit(user_name)
-        if len(args["new_password"]) == "":
+        if args["new_password"] == "":
             abort_with_message(400, "Empty password provided")
-        if not authorized(user_name, args["old_password"]):
+        old_password = args.get("old_password")
+        if own_user:
+            if old_password is None:
+                abort_with_message(422, "Missing old password")
+            if not authorized(user_name, old_password):
+                abort_with_message(403, "Old password incorrect")
+        elif old_password not in (None, "") and not authorized(user_name, old_password):
             abort_with_message(403, "Old password incorrect")
         modify_user(name=user_name, password=args["new_password"])
         return "", 201

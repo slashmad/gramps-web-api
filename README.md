@@ -7,6 +7,8 @@
 > - Added typed parsing/serialization for DB-stored overrides (boolean, number, duration, JSON/list-like values).
 > - Applies DB overrides to runtime `app.config` on startup so DB-managed deployments stay configurable.
 > - Updated config retrieval paths to read typed DB overrides consistently.
+> - Password change endpoint now allows owner/admin to replace another user's password without supplying the old password.
+> - Added CLI command `python3 -m gramps_webapi user set-password <name> <password>` to replace any user's password.
 >
 > Together with the patched **gramps-web** frontend, admins can manage server settings from the web UI when file-based config is not practical (for example TrueNAS Apps).
 >

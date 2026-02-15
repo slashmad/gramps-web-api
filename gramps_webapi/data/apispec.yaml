@@ -683,7 +683,7 @@ paths:
     post:
       tags:
       - users
-      summary: "Change a user password."
+      summary: "Change a user password (or replace another user's password as owner/admin)."
       operationId: changeUserPassword
       security:
         - Bearer: []
@@ -11141,11 +11141,10 @@ definitions:
   PasswordChange:
     type: object
     required:
-      - old_password
       - new_password
     properties:
       old_password:
-        description: "The old password."
+        description: "The old password (required when changing own password using user_name '-')."
         type: string
         example: "abc123"
       new_password:

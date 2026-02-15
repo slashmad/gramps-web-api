@@ -150,6 +150,19 @@ class TestUser(unittest.TestCase):
         )
         assert rv.status_code == 403
 
+    def test_change_password_missing_old_pw_for_own_user(self):
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "user", "password": "123"}
+        )
+        assert rv.status_code == 200
+        token = rv.json["access_token"]
+        rv = self.client.post(
+            BASE_URL + "/users/-/password/change",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"new_password": "456"},
+        )
+        assert rv.status_code == 422
+
     def test_change_password(self):
         rv = self.client.post(
             BASE_URL + "/token/", json={"username": "user", "password": "123"}
@@ -206,6 +219,48 @@ class TestUser(unittest.TestCase):
         assert rv.status_code == 200
         rv = self.client.post(
             BASE_URL + "/token/", json={"username": "owner", "password": "123"}
+        )
+        assert rv.status_code == 200
+
+    def test_owner_can_change_other_user_password_without_old_password(self):
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "owner", "password": "123"}
+        )
+        assert rv.status_code == 200
+        token_owner = rv.json["access_token"]
+        rv = self.client.post(
+            BASE_URL + "/users/user/password/change",
+            headers={"Authorization": f"Bearer {token_owner}"},
+            json={"new_password": "789"},
+        )
+        assert rv.status_code == 201
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "user", "password": "123"}
+        )
+        assert rv.status_code == 403
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "user", "password": "789"}
+        )
+        assert rv.status_code == 200
+
+    def test_admin_can_change_other_tree_user_password_without_old_password(self):
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "admin", "password": "123"}
+        )
+        assert rv.status_code == 200
+        token_admin = rv.json["access_token"]
+        rv = self.client.post(
+            BASE_URL + "/users/user2/password/change",
+            headers={"Authorization": f"Bearer {token_admin}"},
+            json={"new_password": "987"},
+        )
+        assert rv.status_code == 201
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "user2", "password": "123"}
+        )
+        assert rv.status_code == 403
+        rv = self.client.post(
+            BASE_URL + "/token/", json={"username": "user2", "password": "987"}
         )
         assert rv.status_code == 200
 
