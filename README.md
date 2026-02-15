@@ -1,3 +1,15 @@
+> [!IMPORTANT]
+> **Local Patch Block (2026-02-15)**
+>
+> This fork includes backend support for full web-based server configuration:
+> - Expanded configurable-key handling to expose supported `config.cfg`/CLI options through `/api/config/?full=1`.
+> - Added config metadata output (value type, default value, runtime source) for admin UI editing.
+> - Added typed parsing/serialization for DB-stored overrides (boolean, number, duration, JSON/list-like values).
+> - Applies DB overrides to runtime `app.config` on startup so DB-managed deployments stay configurable.
+> - Updated config retrieval paths to read typed DB overrides consistently.
+>
+> Together with the patched **gramps-web** frontend, admins can manage server settings from the web UI when file-based config is not practical (for example TrueNAS Apps).
+>
 # Gramps Web API
 
 This is the repository for **Gramps Web API**, a Python REST API for [Gramps](https://gramps-project.org).

@@ -22,6 +22,7 @@
 import logging
 import os
 import warnings
+import copy
 from typing import Any, Dict, Optional
 
 from flask import Flask, abort, g, send_from_directory
@@ -39,7 +40,7 @@ from .api.search.embeddings import load_model
 from .api.tasks import run_task, send_telemetry_task
 from .api.telemetry import should_send_telemetry
 from .api.util import close_db, get_tree_from_jwt
-from .auth import user_db
+from .auth import user_db, apply_db_config_overrides
 from .auth.oidc import init_oidc
 from .auth.token_blocklist import is_jti_blocklisted
 from .config import DefaultConfig, DefaultConfigJWT
@@ -152,7 +153,13 @@ def create_app(config: Optional[Dict[str, Any]] = None, config_from_env: bool = 
         return is_jti_blocklisted(jti) if jti else False
 
     app.config["SQLALCHEMY_DATABASE_URI"] = app.config["USER_DB_URI"]
+    # Keep a copy of the config before DB overrides are applied.
+    app.config["_BASE_CONFIG"] = copy.deepcopy(dict(app.config))
     user_db.init_app(app)
+
+    # Apply persisted DB overrides so current_app.config reflects web UI edits.
+    with app.app_context():
+        apply_db_config_overrides()
 
     # initialize OIDC if enabled
     init_oidc(app)

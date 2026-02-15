@@ -20,14 +20,17 @@
 """Constants for the web API."""
 
 import atexit
+import re
 import shutil
 from contextlib import ExitStack
 from importlib.resources import as_file, files
+from typing import Any, Mapping
 
 import gramps.gen.lib as lib
 from gramps.gen.plug import CATEGORY_DRAW, CATEGORY_GRAPHVIZ, CATEGORY_TEXT
 
 from ._version import __version__ as VERSION
+from .config import DefaultConfig, DefaultConfigJWT
 
 # the value of the TREE config option that enables multi-tree support
 TREE_MULTI = "*"
@@ -56,16 +59,37 @@ TEST_EMPTY_GRAMPS_AUTH_CONFIG = _get_resource_path(
     "gramps_webapi", "data/empty_gramps_auth.cfg"
 )
 
-# allowed db config keys
-DB_CONFIG_ALLOWED_KEYS = [
-    "EMAIL_HOST",
-    "EMAIL_PORT",
-    "EMAIL_HOST_USER",
-    "EMAIL_HOST_PASSWORD",
-    "DEFAULT_FROM_EMAIL",
-    "BASE_URL",
-    "FRONTEND_URL",
-]
+# allowed db config keys from the default config objects
+DB_CONFIG_ALLOWED_KEYS = sorted(
+    {
+        key
+        for cls in (DefaultConfig, DefaultConfigJWT)
+        for key, value in vars(cls).items()
+        if key.isupper() and not callable(value)
+    }
+)
+_DB_CONFIG_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def is_db_config_key_allowed(
+    key: str, app_config: Mapping[str, Any] | None = None
+) -> bool:
+    """Return whether a config key is allowed for DB overrides."""
+    if not _DB_CONFIG_KEY_PATTERN.fullmatch(key):
+        return False
+    if key in DB_CONFIG_ALLOWED_KEYS:
+        return True
+    if app_config is None:
+        return False
+    return key in app_config
+
+
+def get_db_config_allowed_keys(app_config: Mapping[str, Any] | None = None) -> list[str]:
+    """Get all allowed config keys, including runtime keys from app config."""
+    keys = set(DB_CONFIG_ALLOWED_KEYS)
+    if app_config is not None:
+        keys |= {key for key in app_config if is_db_config_key_allowed(key)}
+    return sorted(keys)
 
 
 # environment variables

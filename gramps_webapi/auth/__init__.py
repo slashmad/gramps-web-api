@@ -20,20 +20,22 @@
 
 """Define methods of providing authentication for users."""
 
+import copy
+import json
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import sqlalchemy as sa
 from flask import current_app
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.exc import IntegrityError, StatementError
+from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.sql.functions import coalesce
 
 
-from ..const import DB_CONFIG_ALLOWED_KEYS
+from ..const import is_db_config_key_allowed, get_db_config_allowed_keys
 from .const import PERMISSIONS, PERM_USE_CHAT, ROLE_ADMIN, ROLE_OWNER
 from .passwords import hash_password, verify_password
 from .sql_guid import GUID
@@ -339,12 +341,178 @@ def fill_tree(tree: str) -> None:
     user_db.session.commit()  # pylint: disable=no-member
 
 
-def config_get(key: str) -> Optional[str]:
-    """Get a single config item."""
+_TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
+_FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
+
+
+def _get_base_config() -> Dict[str, Any]:
+    """Return base app config without DB overrides."""
+    return current_app.config.get("_BASE_CONFIG", current_app.config)
+
+
+def _get_config_template_value(key: str) -> Any:
+    """Return the template value used to infer/parse types."""
+    base_config = _get_base_config()
+    if key in base_config:
+        return base_config[key]
+    return current_app.config.get(key)
+
+
+def _parse_bool(value: Any) -> bool:
+    """Parse a boolean value from common string/int representations."""
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in _TRUE_VALUES:
+        return True
+    if normalized in _FALSE_VALUES:
+        return False
+    raise ValueError("Invalid boolean value")
+
+
+def _parse_config_value(value: Any, template: Any) -> Any:
+    """Parse a config value to match the template type as closely as possible."""
+    if isinstance(template, bool):
+        return _parse_bool(value)
+
+    if isinstance(template, int) and not isinstance(template, bool):
+        if isinstance(value, int):
+            return value
+        return int(str(value).strip())
+
+    if isinstance(template, float):
+        if isinstance(value, float):
+            return value
+        return float(str(value).strip())
+
+    if isinstance(template, dict):
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(parsed, dict):
+            raise ValueError("Expected a JSON object")
+        return parsed
+
+    if isinstance(template, list):
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(parsed, list):
+            raise ValueError("Expected a JSON array")
+        return parsed
+
+    if isinstance(template, tuple):
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if isinstance(parsed, list):
+            return tuple(parsed)
+        raise ValueError("Expected a JSON array")
+
+    if isinstance(template, set):
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if isinstance(parsed, list):
+            return set(parsed)
+        raise ValueError("Expected a JSON array")
+
+    if isinstance(template, timedelta):
+        if isinstance(value, timedelta):
+            return value
+        if isinstance(value, (int, float)):
+            return timedelta(seconds=float(value))
+        value_str = str(value).strip()
+        if value_str == "":
+            raise ValueError("Invalid duration value")
+        # Allow HH:MM:SS format.
+        parts = value_str.split(":")
+        if len(parts) == 3:
+            try:
+                hours = float(parts[0])
+                minutes = float(parts[1])
+                seconds = float(parts[2])
+                return timedelta(hours=hours, minutes=minutes, seconds=seconds)
+            except ValueError:
+                pass
+        # Allow raw numeric seconds, with or without JSON encoding.
+        try:
+            return timedelta(seconds=float(value_str))
+        except ValueError:
+            pass
+        try:
+            parsed = json.loads(value_str)
+            if isinstance(parsed, (int, float)):
+                return timedelta(seconds=float(parsed))
+        except json.JSONDecodeError:
+            pass
+        raise ValueError("Invalid duration value")
+
+    if template is None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "":
+                return ""
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                return value
+        return value
+
+    if isinstance(template, str):
+        if value is None:
+            return ""
+        return str(value)
+
+    # Fallback for unsupported template types: keep the submitted string/value.
+    return value
+
+
+def _serialize_config_value(value: Any) -> str:
+    """Serialize a config value for DB storage."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, set):
+        value = sorted(value)
+    if isinstance(value, timedelta):
+        return str(value.total_seconds())
+    if value is None or isinstance(value, (bool, int, float, list, dict)):
+        return json.dumps(value)
+    return str(value)
+
+
+def _get_parsed_config_value(key: str, stored_value: str) -> Any:
+    """Parse a stored DB value according to key template."""
+    template = _get_config_template_value(key)
+    return _parse_config_value(stored_value, template)
+
+
+def _infer_config_type_name(template: Any) -> str:
+    """Infer a frontend-friendly type string."""
+    if isinstance(template, bool):
+        return "bool"
+    if isinstance(template, int) and not isinstance(template, bool):
+        return "int"
+    if isinstance(template, float):
+        return "float"
+    if isinstance(template, (dict, list, tuple, set)):
+        return "json"
+    if isinstance(template, timedelta):
+        return "duration"
+    if template is None:
+        return "str"
+    return "str"
+
+
+def config_get(key: str, typed: bool = False) -> Optional[Any]:
+    """Get a single config item.
+
+    Returns:
+      - raw stored value string by default
+      - parsed value (`typed=True`)
+    """
     query = user_db.session.query(Config)  # pylint: disable=no-member
     config = query.filter_by(key=key).scalar()
     if config is None:
         return None
+    if typed:
+        return _get_parsed_config_value(key, config.value)
     return config.value
 
 
@@ -355,27 +523,83 @@ def config_get_all() -> Dict[str, str]:
     return {c.key: c.value for c in configs}
 
 
-def config_set(key: str, value: str) -> None:
-    """Set a config item."""
-    if key not in DB_CONFIG_ALLOWED_KEYS:
+def config_get_all_described() -> Dict[str, Dict[str, Any]]:
+    """Get all editable config keys with effective values and metadata."""
+    base_config = _get_base_config()
+    overrides = config_get_all()
+    allowed_keys = set(get_db_config_allowed_keys(base_config)) | set(overrides.keys())
+    data = {}
+    for key in sorted(allowed_keys):
+        template = base_config.get(key)
+        if key in overrides:
+            value = overrides[key]
+            overridden = True
+        else:
+            value = _serialize_config_value(current_app.config.get(key, template))
+            overridden = False
+        data[key] = {
+            "value": value,
+            "overridden": overridden,
+            "type": _infer_config_type_name(template),
+        }
+    return data
+
+
+def config_set(key: str, value: Any) -> None:
+    """Set a config item and apply it to the running app config."""
+    base_config = _get_base_config()
+    if not is_db_config_key_allowed(key, base_config):
         raise ValueError("Config key not allowed.")
+    parsed_value = _parse_config_value(value, _get_config_template_value(key))
+    stored_value = _serialize_config_value(parsed_value)
     query = user_db.session.query(Config)  # pylint: disable=no-member
     config = query.filter_by(key=key).scalar()
     if config is None:  # does not exist, create
-        config = Config(key=str(key), value=str(value))
+        config = Config(key=str(key), value=stored_value)
     else:  # exists, update
-        config.value = str(value)
+        config.value = stored_value
     user_db.session.add(config)  # pylint: disable=no-member
     user_db.session.commit()  # pylint: disable=no-member
+    current_app.config[key] = copy.deepcopy(parsed_value)
 
 
 def config_delete(key: str) -> None:
-    """Delete a config item."""
+    """Delete a config item and restore runtime value from base config."""
     query = user_db.session.query(Config)  # pylint: disable=no-member
     config = query.filter_by(key=key).scalar()
     if config is not None:
         user_db.session.delete(config)  # pylint: disable=no-member
         user_db.session.commit()  # pylint: disable=no-member
+    base_config = _get_base_config()
+    if key in base_config:
+        current_app.config[key] = copy.deepcopy(base_config[key])
+    else:
+        current_app.config.pop(key, None)
+
+
+def apply_db_config_overrides() -> None:
+    """Apply all persisted DB config overrides to current app config."""
+    try:
+        query = user_db.session.query(Config)  # pylint: disable=no-member
+        configs = query.all()
+    except OperationalError:
+        # Table does not exist yet during first startup/migration.
+        return
+
+    base_config = _get_base_config()
+    for config in configs:
+        if not is_db_config_key_allowed(config.key, base_config):
+            continue
+        try:
+            parsed_value = _get_parsed_config_value(config.key, config.value)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            current_app.logger.warning(
+                "Ignoring invalid persisted config override for %s: %s",
+                config.key,
+                exc,
+            )
+            continue
+        current_app.config[config.key] = copy.deepcopy(parsed_value)
 
 
 def get_tree_usage(tree: str) -> Optional[dict[str, int]]:

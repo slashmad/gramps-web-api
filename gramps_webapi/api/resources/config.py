@@ -23,9 +23,15 @@
 from flask import abort, current_app, jsonify
 from webargs import fields
 
-from ...auth import config_delete, config_get, config_get_all, config_set
+from ...auth import (
+    config_delete,
+    config_get,
+    config_get_all,
+    config_get_all_described,
+    config_set,
+)
 from ...auth.const import PERM_EDIT_SETTINGS, PERM_VIEW_SETTINGS
-from ...const import DB_CONFIG_ALLOWED_KEYS
+from ...const import is_db_config_key_allowed
 from ..auth import require_permissions
 from ..util import use_args
 from . import ProtectedResource
@@ -34,19 +40,32 @@ from . import ProtectedResource
 class ConfigsResource(ProtectedResource):
     """Resource for configuration settings."""
 
-    def get(self):
+    @use_args(
+        {
+            "full": fields.Boolean(load_default=False),
+        },
+        location="query",
+    )
+    def get(self, args):
         """Get all config settings."""
         require_permissions([PERM_VIEW_SETTINGS])
+        if args["full"]:
+            return jsonify(config_get_all_described()), 200
         return jsonify(config_get_all()), 200
 
 
 class ConfigResource(ProtectedResource):
     """Resource for a single config setting."""
 
+    @staticmethod
+    def _is_key_allowed(key: str) -> bool:
+        base_config = current_app.config.get("_BASE_CONFIG", current_app.config)
+        return is_db_config_key_allowed(key, base_config)
+
     def get(self, key: str):
         """Get a config setting."""
         require_permissions([PERM_VIEW_SETTINGS])
-        if key not in DB_CONFIG_ALLOWED_KEYS:
+        if not self._is_key_allowed(key):
             abort(404)
         val = config_get(key)
         if val is None:
@@ -55,22 +74,26 @@ class ConfigResource(ProtectedResource):
 
     @use_args(
         {
-            "value": fields.Str(required=True),
+            "value": fields.Raw(required=True),
         },
         location="json",
     )
     def put(self, args, key: str):
         """Update a config setting."""
         require_permissions([PERM_EDIT_SETTINGS])
+        if not self._is_key_allowed(key):
+            abort(404)
         try:
             config_set(key=key, value=args["value"])
-        except ValueError:
-            abort(404)  # key not allowed
+        except ValueError as exc:
+            abort(400, description=str(exc))
         return "", 200
 
     def delete(self, key: str):
         """Delete a config setting."""
         require_permissions([PERM_EDIT_SETTINGS])
+        if not self._is_key_allowed(key):
+            abort(404)
         try:
             if config_get(key=key) is None:
                 abort(404)

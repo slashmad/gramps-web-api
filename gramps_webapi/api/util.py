@@ -81,7 +81,6 @@ from werkzeug.security import safe_join
 from ..auth import config_get, get_tree, get_tree_usage, set_tree_usage
 from ..auth.const import PERM_VIEW_PRIVATE
 from ..const import (
-    DB_CONFIG_ALLOWED_KEYS,
     LOCALE_MAP,
     PRIMARY_GRAMPS_OBJECTS,
     TREE_MULTI,
@@ -608,10 +607,9 @@ def get_config(key: str) -> Any:
     If exists, returns the config item from the database.
     Else, uses the app.config dictionary.
     """
-    if key in DB_CONFIG_ALLOWED_KEYS:
-        val = config_get(key)
-        if val is not None:
-            return val
+    val = config_get(key, typed=True)
+    if val is not None:
+        return val
     return current_app.config.get(key)
 
 
