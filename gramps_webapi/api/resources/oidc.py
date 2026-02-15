@@ -62,16 +62,13 @@ def _is_development_environment(frontend_url: Optional[str]) -> bool:
 def _get_login_customization() -> dict:
     """Return login page presentation settings exposed to unauthenticated clients."""
     return {
-        "title": current_app.config.get("LOGIN_PAGE_TITLE", ""),
-        "left_image_url": current_app.config.get("LOGIN_PAGE_LEFT_IMAGE_URL", ""),
-        "right_image_url": current_app.config.get("LOGIN_PAGE_RIGHT_IMAGE_URL", ""),
-        "image_width": current_app.config.get("LOGIN_PAGE_IMAGE_WIDTH", "280px"),
-        "image_aspect_ratio": current_app.config.get(
-            "LOGIN_PAGE_IMAGE_ASPECT_RATIO", "3 / 4"
-        ),
-        "image_object_fit": current_app.config.get(
-            "LOGIN_PAGE_IMAGE_OBJECT_FIT", "cover"
-        ),
+        "title": get_config("LOGIN_PAGE_TITLE") or "",
+        "left_image_url": get_config("LOGIN_PAGE_LEFT_IMAGE_URL") or "",
+        "right_image_url": get_config("LOGIN_PAGE_RIGHT_IMAGE_URL") or "",
+        "image_width": get_config("LOGIN_PAGE_IMAGE_WIDTH") or "280px",
+        "image_aspect_ratio": get_config("LOGIN_PAGE_IMAGE_ASPECT_RATIO")
+        or "3 / 4",
+        "image_object_fit": get_config("LOGIN_PAGE_IMAGE_OBJECT_FIT") or "cover",
     }
 
 
