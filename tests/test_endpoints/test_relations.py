@@ -20,6 +20,7 @@
 """Tests for the /api/relations endpoints using example_gramps."""
 
 import unittest
+import uuid
 
 from . import BASE_URL, get_test_client
 from .checks import (
@@ -28,6 +29,7 @@ from .checks import (
     check_resource_missing,
     check_success,
 )
+from .util import fetch_header
 
 TEST_URL = BASE_URL + "/relations/"
 
@@ -76,6 +78,22 @@ class TestRelations(unittest.TestCase):
             check="number",
         )
 
+    def test_get_relations_parameter_include_associations_validate_semantics(self):
+        """Test invalid include_associations parameter and values."""
+        check_invalid_semantics(
+            self,
+            TEST_URL + "9BXKQC1PVLPYFMD6IX/ORFKQC4KLWEGTGR19L?include_associations",
+            check="boolean",
+        )
+
+    def test_get_relations_parameter_include_partner_links_validate_semantics(self):
+        """Test invalid include_partner_links parameter and values."""
+        check_invalid_semantics(
+            self,
+            TEST_URL + "9BXKQC1PVLPYFMD6IX/ORFKQC4KLWEGTGR19L?include_partner_links",
+            check="boolean",
+        )
+
     def test_get_relations_parameter_depth_expected_result(self):
         """Test depth parameter working as expected."""
         rv = check_success(
@@ -112,6 +130,66 @@ class TestRelations(unittest.TestCase):
             self, TEST_URL + "cc8205d87831c772e87/cc8205d872f532ab14e?locale=it"
         )
         self.assertEqual(rv["relationship_string"], "marito")
+
+    def test_get_relations_include_associations_expected_result(self):
+        """Test association bridge payload for non-family connected people."""
+        headers = fetch_header(self.client)
+        handles = {
+            "home": str(uuid.uuid4()),
+            "bridge": str(uuid.uuid4()),
+            "target": str(uuid.uuid4()),
+        }
+
+        payload_target = {"_class": "Person", "handle": handles["target"]}
+        payload_bridge = {
+            "_class": "Person",
+            "handle": handles["bridge"],
+            "person_ref_list": [
+                {"_class": "PersonRef", "rel": "Friend", "ref": handles["target"]}
+            ],
+        }
+        payload_home = {
+            "_class": "Person",
+            "handle": handles["home"],
+            "person_ref_list": [
+                {"_class": "PersonRef", "rel": "Friend", "ref": handles["bridge"]}
+            ],
+        }
+
+        try:
+            self.assertEqual(
+                self.client.post(
+                    "/api/people/", json=payload_target, headers=headers
+                ).status_code,
+                201,
+            )
+            self.assertEqual(
+                self.client.post(
+                    "/api/people/", json=payload_bridge, headers=headers
+                ).status_code,
+                201,
+            )
+            self.assertEqual(
+                self.client.post(
+                    "/api/people/", json=payload_home, headers=headers
+                ).status_code,
+                201,
+            )
+
+            rv = self.client.get(
+                TEST_URL
+                + f'{handles["home"]}/{handles["target"]}?include_associations=1&depth=5',
+                headers=headers,
+            )
+            self.assertEqual(rv.status_code, 200)
+            self.assertEqual(rv.json["relationship_string"], "")
+            self.assertIn("association_via", rv.json)
+            self.assertEqual(rv.json["association_via"]["handle"], handles["bridge"])
+            self.assertEqual(rv.json["association_via"]["path_length"], 2)
+        finally:
+            self.client.delete(f'/api/people/{handles["home"]}', headers=headers)
+            self.client.delete(f'/api/people/{handles["bridge"]}', headers=headers)
+            self.client.delete(f'/api/people/{handles["target"]}', headers=headers)
 
 
 class TestRelationsAll(unittest.TestCase):

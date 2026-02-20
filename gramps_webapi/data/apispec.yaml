@@ -6049,6 +6049,18 @@ paths:
         required: false
         type: string
         description: "Specifies the locale for the translated string if one other than the current default is desired. Should be a valid language code from the available list of translations."
+      - name: include_associations
+        in: query
+        required: false
+        type: boolean
+        default: false
+        description: "When true and no family relationship is found, include person-association connectivity lookup in the response."
+      - name: include_partner_links
+        in: query
+        required: false
+        type: boolean
+        default: false
+        description: "When true and no family relationship string is found, allow partner edges (same family co-parent links) as bridge links."
       responses:
         200:
           description: "OK: Successful operation."
@@ -10593,6 +10605,25 @@ definitions:
         description: "Number of generations to other person in common, -1 if there is none."
         type: integer
         example: 1
+      association_via:
+        description: "Optional bridge person when no family relationship string is found."
+        $ref: "#/definitions/AssociationVia"
+
+  AssociationVia:
+    type: object
+    properties:
+      handle:
+        description: "Handle of the first-hop bridge person from the anchor person."
+        type: string
+      gramps_id:
+        description: "Gramps ID of the first-hop bridge person from the anchor person."
+        type: string
+      name_display:
+        description: "Display name of the first-hop bridge person."
+        type: string
+      path_length:
+        description: "Number of edges between the two people in the discovered mixed family+association path."
+        type: integer
 
   Relationships:
     type: array
